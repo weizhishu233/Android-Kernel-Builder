@@ -178,6 +178,8 @@ jobs:
 
           # 确保 common 目录存在
           mkdir -p ./common
+          mkdir -p ./common/fs
+          mkdir -p ./common/include/linux
 
           # Copy SUSFS patches
           cp susfs4ksu/kernel_patches/50_add_susfs_in_kernel-4.14.patch ./common/
