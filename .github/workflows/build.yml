@@ -176,14 +176,11 @@ jobs:
           git clone https://gitlab.com/simonpunk/susfs4ksu.git -b kernel-4.14
           git clone https://github.com/ShirkNeko/SukiSU_patch.git
 
-          # Check if the patch file exists
-          if [ ! -f "susfs4ksu/kernel_patches/50_add_susfs_in_kernel-4.14.patch" ]; then
-            echo "Patch file not found. Using default patch."
-            cp ../susfs4ksu/kernel_patches/50_add_susfs_in_kernel-4.14.patch ./common/
-          else
-            cp susfs4ksu/kernel_patches/50_add_susfs_in_kernel-4.14.patch ./common/
-          fi
+          # 确保 common 目录存在
+          mkdir -p ./common
 
+          # Copy SUSFS patches
+          cp susfs4ksu/kernel_patches/50_add_susfs_in_kernel-4.14.patch ./common/
           cp susfs4ksu/kernel_patches/fs/* ./common/fs/
           cp susfs4ksu/kernel_patches/include/linux/* ./common/include/linux/
 
