@@ -136,7 +136,7 @@ jobs:
           echo -e "CONFIG_KSU=y" >> arch/${{ env.arch }}/configs/${{ env.DEFCONFIG_NAME }}
           echo -e "CONFIG_KSU_SUSFS=y" >> arch/${{ env.arch }}/configs/${{ env.DEFCONFIG_NAME }}
 
-          cat arch/${{ env.arch }}/configs/${{ env.DEFCONFIG_NAME }}
+          cat arch/${{ env.arch }}configs/${{ env.DEFCONFIG_NAME }}
 
       - name: "🔧 Apply SUSFS Patches"
         working-directory: ${{ env.KERNEL_NAME }}
