@@ -1,11 +1,11 @@
 [
   {
     "kernelSource": {
-      "name": "kernel_xiaomi_alioth",
-      "repo": "https://github.com/rcmiku/kernel_xiaomi_alioth",
-      "branch": "main",
-      "device": "alioth",
-      "defconfig": "alioth_defconfig"
+      "name": "android_kernel_xiaomi_mt6893",
+      "repo": "https://github.com/jsdizkcksv/android_kernel_xiaomi_mt6893",
+      "branch": "ares",
+      "device": "ares",
+      "defconfig": "ares_defconfig"
     },
     "withKernelSU": true,
     "toolchains": [
