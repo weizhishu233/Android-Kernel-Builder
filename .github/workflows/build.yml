@@ -1,8 +1,5 @@
 name: "Build kernels"
 
-env:
-  OUT_DIR: "${{ github.workspace }}/out"
-
 on:
   workflow_dispatch:
     inputs:
@@ -39,27 +36,27 @@ on:
 
 jobs:
   Set-repos:
-    name: "🐂 Parse repos.json"
+    name: "Parse repos.json"
     runs-on: ubuntu-latest
     outputs:
       repos: ${{ steps.generate-matrix.outputs.repos }}
       builddate: ${{ steps.generate-builddate.outputs.builddate }}
     steps:
-      - name: "😄 Checkout"
+      - name: "Checkout"
         uses: actions/checkout@v3
 
-      - name: "😆 Generate Matrix"
+      - name: "Generate Matrix"
         id: generate-matrix
         run: |
           echo "repos<<EOF" >> $GITHUB_OUTPUT
           jq -s '[.[][]]' repos*.json >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
-      - name: "⏰ Set builddate"
+      - name: "Set builddate"
         id: generate-builddate
         run: echo "builddate=$(date +'%Y%m%d')" >> $GITHUB_OUTPUT
 
   Build-Kernel:
-    name: "🐎 Build kernel"
+    name: "Build kernel"
     runs-on: ubuntu-22.04
     needs:
       - Set-repos
@@ -84,12 +81,12 @@ jobs:
       kernelsu_variant: ${{ github.event.inputs.kernelsu_variant }}
       kernelsu_version: ${{ github.event.inputs.kernelsu_version }}
     steps:
-      - name: "⭐ Install prerequisites"
+      - name: "Install prerequisites"
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential bc curl git zip ftp gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi libssl-dev lftp zstd wget libfl-dev python2 python3 libarchive-tools
 
-      - name: "⏰ Setup Anykernel3"
+      - name: "Setup Anykernel3"
         env:
           params: "${{ toJSON(matrix.repos.AnyKernel3) }}"
         run: |
@@ -97,40 +94,40 @@ jobs:
           ANYKERNEL_BRANCH=$(echo $params | jq -r ".branch")
           git clone --recursive --depth=1 -j $(nproc) --branch $ANYKERNEL_BRANCH $ANYKERNEL_REPO AnyKernel3
 
-          echo "🤔 Setup Anykernel3 => ($ANYKERNEL_REPO)"
+          echo "Setup Anykernel3 => ($ANYKERNEL_REPO)"
 
-      - name: "🌟 Clone kernel source => (${{ env.KERNEL_REPO }})"
+      - name: "Clone kernel source => (${{ env.KERNEL_REPO }})"
         run: |
           git clone --recursive --depth=1 -j $(nproc) --branch $KERNEL_BRANCH $KERNEL_REPO $KERNEL_NAME
 
-          echo "🤔 Clone kernel source => ($KERNEL_REPO)"
+          echo "Clone kernel source => ($KERNEL_REPO)"
 
-      - name: "💫 Get toolchains"
+      - name: "Get toolchains"
         env:
           toolchains: "${{ toJSON(matrix.repos.toolchains) }}"
         run: |
           toolchains_num="$(echo $toolchains | jq 'length')"
-          echo "🤔 There is $toolchains_num defined toolchains."
+          echo "There is $toolchains_num defined toolchains."
           for ((i=0;i<toolchains_num;i++)); do
             toolchain_name=$(echo $toolchains | jq -r ".[$i].name")
             toolchain_repo=$(echo $toolchains | jq -r ".[$i].repo")
             toolchain_branch=$(echo $toolchains | jq -r ".[$i].branch")
 
             git clone --recursive --depth=1 -j $(nproc) --branch $toolchain_branch $toolchain_repo $toolchain_name
-            echo "🤔 Clone $toolchain_name => ($toolchain_repo)"
+            echo "Clone $toolchain_name => ($toolchain_repo)"
 
             jq -r ".[$i].binPath[] | tostring" <<< "$toolchains" | while read -r bin_path; do
               echo "$WORKSPACE/$toolchain_name/$bin_path" >> $GITHUB_PATH
             done
           done
 
-      - name: "😎 Set args"
+      - name: "Set args"
         id: generate-args
         env:
           params: "${{ toJSON(matrix.repos.params) }}"
           THREAD: $(nproc --all)
         run: |
-          echo "🤔 PATH Variable: $PATH"
+          echo "PATH Variable: $PATH"
 
           ARCH=$(echo $params | jq -r ".ARCH")
           CC=$(echo $params | jq -r ".CC")
@@ -150,11 +147,11 @@ jobs:
           done < <(jq -r '.externalCommand | to_entries[] | "\(.key)=${{ env.WORKSPACE }}/\(.value)"' <<< "$params")
 
 
-          echo "🤔 $args"
+          echo "args"
           echo "ARCH=$ARCH" >> $GITHUB_OUTPUT
           echo "args=$args" >> $GITHUB_OUTPUT
 
-      - name: "🔄 Setup SukiSU"
+      - name: "Setup SukiSU"
         if: ${{ env.withKernelSU == 'true' && env.kernelsu_variant == 'SukiSU' }}
         run: |
           if [[ "${{ env.kernelsu_version }}" == "tag" ]]; then
@@ -163,7 +160,7 @@ jobs:
             echo "BRANCH=-s susfs-dev" >> $GITHUB_ENV
           fi
 
-      - name: "✨ Add SukiSU"
+      - name: "Add SukiSU"
         if: ${{ env.withKernelSU == 'true' && env.kernelsu_variant == 'SukiSU' }}
         run: |
           cd ${{ env.KERNEL_NAME }}
@@ -172,43 +169,24 @@ jobs:
           KSU_VERSION=$(expr $(/usr/bin/git rev-list --count HEAD) "+" 12505)
           echo "KSUVER=$KSU_VERSION" >> $GITHUB_ENV
 
-      - name: "🧩 Apply SUSFS Patches"
+      - name: "Apply SUSFS Patches"
         if: ${{ env.withKernelSU == 'true' && env.kernelsu_variant == 'SukiSU' && env.SUSFS_ENABLED == 'true' }}
         run: |
           cd ${{ env.KERNEL_NAME }}
-          # 确保分支名称有效
-          if [ -z "${{ matrix.repos.android_version }}" ] || [ -z "${{ matrix.repos.kernel_version }}" ]; then
-            echo "Android version or kernel version is not specified. Using default branch 'main'."
-            git clone https://gitlab.com/simonpunk/susfs4ksu.git -b main
-          else
-            # 检查分支是否存在
-            git ls-remote --exit-code --heads https://gitlab.com/simonpunk/susfs4ksu.git "gki-${{ matrix.repos.android_version }}-${{ matrix.repos.kernel_version }}" || {
-              echo "Branch gki-${{ matrix.repos.android_version }}-${{ matrix.repos.kernel_version }} not found. Using default branch 'main'."
-              git clone https://gitlab.com/simonpunk/susfs4ksu.git -b main
-            }
-          fi
+          git clone https://gitlab.com/simonpunk/susfs4ksu.git -b main
+          git clone https://github.com/ShirkNeko/SukiSU_patch.git
 
-    # 复制补丁文件
-    cp ../susfs4ksu/kernel_patches/50_add_susfs_in_gki-${{ matrix.repos.android_version }}-${{ matrix.repos.kernel_version }}.patch ./common/
-    cp ../susfs4ksu/kernel_patches/fs/* ./common/fs/
-    cp ../susfs4ksu/kernel_patches/include/linux/* ./common/include/linux/
+          # Copy SUSFS patches
+          cp ../susfs4ksu/kernel_patches/50_add_susfs_in_kernel-4.14.patch ./common/
+          cp ../susfs4ksu/kernel_patches/fs/* ./common/fs/
+          cp ../susfs4ksu/kernel_patches/include/linux/* ./common/include/linux/
 
-    echo "正在给内核打susfs补丁"
-    cd ./common
-    patch -p1 < 50_add_susfs_in_gki-${{ matrix.repos.android_version }}-${{ matrix.repos.kernel_version }}.patch || true
-    echo "完成"
+          echo "正在给内核打susfs补丁"
+          cd ./common
+          patch -p1 < 50_add_susfs_in_kernel-4.14.patch || true
+          echo "完成"
 
-    # 复制补丁文件
-    cp ../susfs4ksu/kernel_patches/50_add_susfs_in_gki-${{ matrix.repos.android_version }}-${{ matrix.repos.kernel_version }}.patch ./common/
-    cp ../susfs4ksu/kernel_patches/fs/* ./common/fs/
-    cp ../susfs4ksu/kernel_patches/include/linux/* ./common/include/linux/
-
-    echo "正在给内核打susfs补丁"
-    cd ./common
-    patch -p1 < 50_add_susfs_in_gki-${{ matrix.repos.android_version }}-${{ matrix.repos.kernel_version }}.patch || true
-    echo "完成"
-
-      - name: "🔍 Apply Hide Stuff Patches"
+      - name: "Apply Hide Stuff Patches"
         if: ${{ env.withKernelSU == 'true' && env.kernelsu_variant == 'SukiSU' && env.SUSFS_ENABLED == 'true' }}
         run: |
           cd ${{ env.KERNEL_NAME }}/common
@@ -216,7 +194,7 @@ jobs:
           echo "正在打隐藏应用补丁"
           patch -p1 -F 3 < 69_hide_stuff.patch
 
-      - name: "🔗 Apply New Hooks Patches"
+      - name: "Apply New Hooks Patches"
         if: ${{ env.withKernelSU == 'true' && env.kernelsu_variant == 'SukiSU' && env.VFS_patch_ENABLED == 'enable' }}
         run: |
           cd ${{ env.KERNEL_NAME }}/common
@@ -225,7 +203,7 @@ jobs:
           patch -p1 -F 3 < new_hooks.patch
           echo "完成"
 
-      - name: "⚙️ Add SUSFS Configuration Settings"
+      - name: "Add SUSFS Configuration Settings"
         if: ${{ env.withKernelSU == 'true' && env.kernelsu_variant == 'SukiSU' }}
         run: |
           cd ${{ env.KERNEL_NAME }}
@@ -257,7 +235,7 @@ jobs:
           echo "CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y" >> ./common/arch/arm64/configs/${{ env.DEFCONFIG_NAME }}
           echo "CONFIG_KSU_SUSFS_OPEN_REDIRECT=y" >> ./common/arch/arm64/configs/${{ env.DEFCONFIG_NAME }}
 
-      - name: "👍 Make defconfig"
+      - name: "Make defconfig"
         working-directory: ${{ env.KERNEL_NAME }}
         env:
           args: ${{ steps.generate-args.outputs.args }}
@@ -266,7 +244,7 @@ jobs:
           echo "PATH Variable: $PATH"
           make ${{ env.args }} ${{ env.DEFCONFIG_NAME }}
 
-      - name: "🎶 Build kernel"
+      - name: "Build kernel"
         working-directory: ${{ env.KERNEL_NAME }}
         env:
           args: ${{ steps.generate-args.outputs.args }}
@@ -274,7 +252,7 @@ jobs:
           echo "PATH Variable: $PATH"
           make ${args}
 
-      - name: "💛 Upload Image"
+      - name: "Upload Image"
         uses: actions/upload-artifact@v4
         env:
           arch: ${{ steps.generate-args.outputs.ARCH }}
@@ -284,7 +262,7 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-      - name: "💙 Upload Image.gz"
+      - name: "Upload Image.gz"
         uses: actions/upload-artifact@v4
         env:
           arch: ${{ steps.generate-args.outputs.ARCH }}
@@ -294,7 +272,7 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-      - name: "💜 Upload dtb"
+      - name: "Upload dtb"
         uses: actions/upload-artifact@v4
         env:
           arch: ${{ steps.generate-args.outputs.ARCH }}
@@ -304,7 +282,7 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-      - name: "❤️ Upload dtbo.img"
+      - name: "Upload dtbo.img"
         uses: actions/upload-artifact@v4
         env:
           arch: ${{ steps.generate-args.outputs.ARCH }}
@@ -314,7 +292,7 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-      - name: "❤️ Pack AnyKernel3.zip"
+      - name: "Pack AnyKernel3.zip"
         if: ${{ env.useAnykernel == 'true' }}
         env:
           arch: ${{ steps.generate-args.outputs.ARCH }}
@@ -329,14 +307,14 @@ jobs:
           cd AnyKernel3/
           zip -q -r "${{ env.anykernel }}.zip" *
 
-      - name: "💾 Upload AnyKernel3 image => (${{ env.builddate }})"
+      - name: "Upload AnyKernel3 image => (${{ env.builddate }})"
         uses: actions/upload-artifact@v4
         if: ${{ env.useAnykernel == 'true' }}
         with:
           name: "${{ env.KERNEL_DEVICE }}-${{ env.KERNEL_NAME }}_${{ env.builddate }}.zip"
           path: AnyKernel3/*.zip
 
-      - name: "🎉 Create GitHub Release => (${{ env.builddate }})"
+      - name: "Create GitHub Release => (${{ env.builddate }})"
         continue-on-error: true
         uses: softprops/action-gh-release@v1
         if: ${{ env.useAnykernel == 'true' && env.release == 'true' }}
