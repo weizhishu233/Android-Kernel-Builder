@@ -173,7 +173,7 @@ jobs:
         if: ${{ env.withKernelSU == 'true' && env.kernelsu_variant == 'SukiSU' && env.SUSFS_ENABLED == 'true' }}
         run: |
           cd ${{ env.KERNEL_NAME }}
-          git clone https://gitlab.com/simonpunk/susfs4ksu.git -b master
+          git clone https://gitlab.com/simonpunk/susfs4ksu.git -b kernel-4.14
           git clone https://github.com/ShirkNeko/SukiSU_patch.git
 
           # Copy SUSFS patches
@@ -226,7 +226,7 @@ jobs:
           echo "CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT=y" >> ./common/arch/arm64/configs/${{ env.DEFCONFIG_NAME }}
           echo "CONFIG_KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT=y" >> ./common/arch/arm64/configs/${{ env.DEFCONFIG_NAME }}
           echo "CONFIG_KSU_SUSFS_SUS_KSTAT=y" >> ./common/arch/arm64/configs/${{ env.DEFCONFIG_NAME }}
-          echo "CONFIG_KSU_SUSFS_SUS_OVERLAYFS=n" >> ./common/arch/arm64/configs/${{ env.DEFCONFIG_name }}
+          echo "CONFIG_KSU_SUSFS_SUS_OVERLAYFS=n" >> ./common/arch/arm64/configs/${{ env.DEFCONFIG_NAME }}
           echo "CONFIG_KSU_SUSFS_TRY_UMOUNT=y" >> ./common/arch/arm64/configs/${{ env.DEFCONFIG_NAME }}
           echo "CONFIG_KSU_SUSFS_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT=y" >> ./common/arch/arm64/configs/${{ env.DEFCONFIG_NAME }}
           echo "CONFIG_KSU_SUSFS_SPOOF_UNAME=y" >> ./common/arch/arm64/configs/${{ env.DEFCONFIG_NAME }}
