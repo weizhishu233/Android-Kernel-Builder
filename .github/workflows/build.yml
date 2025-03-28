@@ -5,6 +5,37 @@ env:
 
 on:
   workflow_dispatch:
+    inputs:
+      SUSFS_ENABLED:
+        description: "添加 SUSFS"
+        required: true
+        type: boolean
+        default: true
+      VFS_patch_ENABLED:
+        description: "添加vfs补丁（新钩子）？"
+        required: true
+        type: choice
+        options:
+          - enable
+          - disable
+        default: enable
+      kernelsu_variant:
+        description: "选择 KSU"
+        required: true
+        type: choice
+        options:
+          - Kernel
+          - SukiSU
+        default: SukiSU
+      kernelsu_version:
+        description: "选择 KSU 版本"
+        required: true
+        type: choice
+        options:
+          - without ksu
+          - tag
+          - main
+        default: main
 
 jobs:
   Set-repos:
@@ -23,7 +54,6 @@ jobs:
           echo "repos<<EOF" >> $GITHUB_OUTPUT
           jq -s '[.[][]]' repos*.json >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
-
       - name: "⏰ Set builddate"
         id: generate-builddate
         run: echo "builddate=$(date +'%Y%m%d')" >> $GITHUB_OUTPUT
@@ -49,7 +79,10 @@ jobs:
       withKernelSU: ${{ matrix.repos.withKernelSU }}
       useAnykernel: ${{ matrix.repos.AnyKernel3.use }}
       release: ${{ matrix.repos.AnyKernel3.release }}
-
+      SUSFS_ENABLED: ${{ github.event.inputs.SUSFS_ENABLED }}
+      VFS_patch_ENABLED: ${{ github.event.inputs.VFS_patch_ENABLED }}
+      kernelsu_variant: ${{ github.event.inputs.kernelsu_variant }}
+      kernelsu_version: ${{ github.event.inputs.kernelsu_version }}
     steps:
       - name: "⭐ Install prerequisites"
         run: |
@@ -63,11 +96,13 @@ jobs:
           ANYKERNEL_REPO=$(echo $params | jq -r ".repo")
           ANYKERNEL_BRANCH=$(echo $params | jq -r ".branch")
           git clone --recursive --depth=1 -j $(nproc) --branch $ANYKERNEL_BRANCH $ANYKERNEL_REPO AnyKernel3
+
           echo "🤔 Setup Anykernel3 => ($ANYKERNEL_REPO)"
 
       - name: "🌟 Clone kernel source => (${{ env.KERNEL_REPO }})"
         run: |
           git clone --recursive --depth=1 -j $(nproc) --branch $KERNEL_BRANCH $KERNEL_REPO $KERNEL_NAME
+
           echo "🤔 Clone kernel source => ($KERNEL_REPO)"
 
       - name: "💫 Get toolchains"
@@ -96,6 +131,7 @@ jobs:
           THREAD: $(nproc --all)
         run: |
           echo "🤔 PATH Variable: $PATH"
+
           ARCH=$(echo $params | jq -r ".ARCH")
           CC=$(echo $params | jq -r ".CC")
 
@@ -113,85 +149,94 @@ jobs:
             args="$args $externalCommand"
           done < <(jq -r '.externalCommand | to_entries[] | "\(.key)=${{ env.WORKSPACE }}/\(.value)"' <<< "$params")
 
+
           echo "🤔 $args"
           echo "ARCH=$ARCH" >> $GITHUB_OUTPUT
           echo "args=$args" >> $GITHUB_OUTPUT
 
       - name: "🔄 Setup SukiSU"
-        working-directory: ${{ env.KERNEL_NAME }}
-        if: ${{ env.withKernelSU == 'true' }}
+        if: ${{ env.withKernelSU == 'true' && env.kernelsu_variant == 'SukiSU' }}
         run: |
-          if [ -d "./KernelSU" ]; then
-            rm -rf "./KernelSU"
-          fi
-          if [ -d "./drivers/kernelsu" ]; then
-            rm -rf "./drivers/kernelsu"
+          if [[ "${{ env.kernelsu_version }}" == "tag" ]]; then
+            echo "BRANCH=-" >> $GITHUB_ENV
+          elif [[ "${{ env.kernelsu_version }}" == "main" ]]; then
+            echo "BRANCH=-s susfs-dev" >> $GITHUB_ENV
           fi
 
-          curl -LSs "https://raw.githubusercontent.com/ShirkNeko/KernelSU/main/kernel/setup.sh" | bash -s susfs-dev
-
-          echo -e "CONFIG_KPROBES=y" >> arch/${{ env.arch }}/configs/${{ env.DEFCONFIG_NAME }}
-          echo -e "CONFIG_HAVE_KPROBES=y" >> arch/${{ env.arch }}/configs/${{ env.DEFCONFIG_NAME }}
-          echo -e "CONFIG_KPROBE_EVENTS=y" >> arch/${{ env.arch }}/configs/${{ env.DEFCONFIG_NAME }}          
-          echo -e "CONFIG_KSU=y" >> arch/${{ env.arch }}/configs/${{ env.DEFCONFIG_NAME }}
-          echo -e "CONFIG_KSU_SUSFS=y" >> arch/${{ env.arch }}/configs/${{ env.DEFCONFIG_NAME }}
-
-          cat arch/${{ env.arch }}configs/${{ env.DEFCONFIG_NAME }}
-
-      - name: "🔧 Apply SUSFS Patches"
-        working-directory: ${{ env.KERNEL_NAME }}
-        if: ${{ env.withKernelSU == 'true' }}
+      - name: "✨ Add SukiSU"
+        if: ${{ env.withKernelSU == 'true' && env.kernelsu_variant == 'SukiSU' }}
         run: |
-          git clone https://gitlab.com/simonpunk/susfs4ksu.git -b gki-${{ env.ANDROID_VERSION }}-${{ env.KERNEL_VERSION }}
+          cd ${{ env.KERNEL_NAME }}
+          curl -LSs "https://raw.githubusercontent.com/ShirkNeko/KernelSU/main/kernel/setup.sh" | bash ${{ env.BRANCH }}
+          cd ./KernelSU
+          KSU_VERSION=$(expr $(/usr/bin/git rev-list --count HEAD) "+" 12505)
+          echo "KSUVER=$KSU_VERSION" >> $GITHUB_ENV
+
+      - name: "🧩 Apply SUSFS Patches"
+        if: ${{ env.withKernelSU == 'true' && env.kernelsu_variant == 'SukiSU' && env.SUSFS_ENABLED == 'true' }}
+        run: |
+          cd ${{ env.KERNEL_NAME }}
+          git clone https://gitlab.com/simonpunk/susfs4ksu.git -b gki-${{ matrix.repos.android_version }}-${{ matrix.repos.kernel_version }}
           git clone https://github.com/ShirkNeko/SukiSU_patch.git
 
           # Copy SUSFS patches
-          cp ../susfs4ksu/kernel_patches/50_add_susfs_in_gki-${{ env.ANDROID_VERSION }}-${{ env.KERNEL_VERSION }}.patch ./common/
+          cp ../susfs4ksu/kernel_patches/50_add_susfs_in_gki-${{ matrix.repos.android_version }}-${{ matrix.repos.kernel_version }}.patch ./common/
           cp ../susfs4ksu/kernel_patches/fs/* ./common/fs/
           cp ../susfs4ksu/kernel_patches/include/linux/* ./common/include/linux/
 
           echo "正在给内核打susfs补丁"
           cd ./common
-          patch -p1 < 50_add_susfs_in_gki-${{ env.ANDROID_VERSION }}-${{ env.KERNEL_VERSION }}.patch || true
+          patch -p1 < 50_add_susfs_in_gki-${{ matrix.repos.android_version }}-${{ matrix.repos.kernel_version }}.patch || true
           echo "完成"
 
-      - name: "🔒 Apply Hide Stuff Patches"
-        working-directory: ${{ env.KERNEL_NAME }}/common
-        if: ${{ env.withKernelSU == 'true' }}
+      - name: "🔍 Apply Hide Stuff Patches"
+        if: ${{ env.withKernelSU == 'true' && env.kernelsu_variant == 'SukiSU' && env.SUSFS_ENABLED == 'true' }}
         run: |
+          cd ${{ env.KERNEL_NAME }}/common
           cp ../../SukiSU_patch/69_hide_stuff.patch ./
           echo "正在打隐藏应用补丁"
           patch -p1 -F 3 < 69_hide_stuff.patch
 
-      - name: "🔗 Apply VFS Patches"
-        working-directory: ${{ env.KERNEL_NAME }}/common
-        if: ${{ env.withKernelSU == 'true' }}
+      - name: "🔗 Apply New Hooks Patches"
+        if: ${{ env.withKernelSU == 'true' && env.kernelsu_variant == 'SukiSU' && env.VFS_patch_ENABLED == 'enable' }}
         run: |
+          cd ${{ env.KERNEL_NAME }}/common
           cp ../../SukiSU_patch/hooks/new_hooks.patch ./
           echo "正在打vfs补丁"
           patch -p1 -F 3 < new_hooks.patch
           echo "完成"
 
-      - name: "⚙️ Add SUSFS Configuration"
-        working-directory: ${{ env.KERNEL_NAME }}
-        if: ${{ env.withKernelSU == 'true' }}
+      - name: "⚙️ Add SUSFS Configuration Settings"
+        if: ${{ env.withKernelSU == 'true' && env.kernelsu_variant == 'SukiSU' }}
         run: |
+          cd ${{ env.KERNEL_NAME }}
           # Add KSU configuration settings
-          echo "CONFIG_KSU=y" >> ./common/arch/arm64/configs/gki_defconfig
-          echo "CONFIG_KSU_SUSFS=y" >> ./common/arch/arm64/configs/gki_defconfig
-          echo "CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT=y" >> ./common/arch/arm64/configs/gki_defconfig
-          echo "CONFIG_KSU_SUSFS_SUS_PATH=y" >> ./common/arch/arm64/configs/gki_defconfig
-          echo "CONFIG_KSU_SUSFS_SUS_MOUNT=y" >> ./common/arch/arm64/configs/gki_defconfig
-          echo "CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT=y" >> ./common/arch/arm64/configs/gki_defconfig
-          echo "CONFIG_KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT=y" >> ./common/arch/arm64/configs/gki_defconfig
-          echo "CONFIG_KSU_SUSFS_SUS_KSTAT=y" >> ./common/arch/arm64/configs/gki_defconfig
-          echo "CONFIG_KSU_SUSFS_TRY_UMOUNT=y" >> ./common/arch/arm64/configs/gki_defconfig
-          echo "CONFIG_KSU_SUSFS_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT=y" >> ./common/arch/arm64/configs/gki_defconfig
-          echo "CONFIG_KSU_SUSFS_SPOOF_UNAME=y" >> ./common/arch/arm64/configs/gki_defconfig
-          echo "CONFIG_KSU_SUSFS_ENABLE_LOG=y" >> ./common/arch/arm64/configs/gki_defconfig
-          echo "CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y" >> ./common/arch/arm64/configs/gki_defconfig
-          echo "CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y" >> ./common/arch/arm64/configs/gki_defconfig
-          echo "CONFIG_KSU_SUSFS_OPEN_REDIRECT=y" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_KSU=y" >> ./common/arch/arm64/configs/${{ env.DEFCONFIG_NAME }}
+
+          # Add VFS configuration settings
+          if [[ "${{ env.VFS_patch_ENABLED }}" == 'enable' ]]; then
+            echo "CONFIG_KSU_SUSFS_SUS_SU=n" >> ./common/arch/arm64/configs/${{ env.DEFCONFIG_NAME }}
+            echo "CONFIG_KSU_MANUAL_HOOK=y" >> ./common/arch/arm64/configs/${{ env.DEFCONFIG_NAME }}
+          else
+            echo "CONFIG_KSU_SUSFS_SUS_SU=y" >> ./common/arch/arm64/configs/${{ env.DEFCONFIG_NAME }}
+          fi
+
+          # Add SUSFS configuration settings
+          echo "CONFIG_KSU_SUSFS=y" >> ./common/arch/arm64/configs/${{ env.DEFCONFIG_NAME }}
+          echo "CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT=y" >> ./common/arch/arm64/configs/${{ env.DEFCONFIG_NAME }}
+          echo "CONFIG_KSU_SUSFS_SUS_PATH=y" >> ./common/arch/arm64/configs/${{ env.DEFCONFIG_NAME }}
+          echo "CONFIG_KSU_SUSFS_SUS_MOUNT=y" >> ./common/arch/arm64/configs/${{ env.DEFCONFIG_NAME }}
+          echo "CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT=y" >> ./common/arch/arm64/configs/${{ env.DEFCONFIG_NAME }}
+          echo "CONFIG_KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT=y" >> ./common/arch/arm64/configs/${{ env.DEFCONFIG_NAME }}
+          echo "CONFIG_KSU_SUSFS_SUS_KSTAT=y" >> ./common/arch/arm64/configs/${{ env.DEFCONFIG_NAME }}
+          echo "CONFIG_KSU_SUSFS_SUS_OVERLAYFS=n" >> ./common/arch/arm64/configs/${{ env.DEFCONFIG_NAME }}
+          echo "CONFIG_KSU_SUSFS_TRY_UMOUNT=y" >> ./common/arch/arm64/configs/${{ env.DEFCONFIG_NAME }}
+          echo "CONFIG_KSU_SUSFS_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT=y" >> ./common/arch/arm64/configs/${{ env.DEFCONFIG_NAME }}
+          echo "CONFIG_KSU_SUSFS_SPOOF_UNAME=y" >> ./common/arch/arm64/configs/${{ env.DEFCONFIG_NAME }}
+          echo "CONFIG_KSU_SUSFS_ENABLE_LOG=y" >> ./common/arch/arm64/configs/${{ env.DEFCONFIG_NAME }}
+          echo "CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y" >> ./common/arch/arm64/configs/${{ env.DEFCONFIG_NAME }}
+          echo "CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y" >> ./common/arch/arm64/configs/${{ env.DEFCONFIG_NAME }}
+          echo "CONFIG_KSU_SUSFS_OPEN_REDIRECT=y" >> ./common/arch/arm64/configs/${{ env.DEFCONFIG_NAME }}
 
       - name: "👍 Make defconfig"
         working-directory: ${{ env.KERNEL_NAME }}
@@ -269,10 +314,10 @@ jobs:
         uses: actions/upload-artifact@v4
         if: ${{ env.useAnykernel == 'true' }}
         with:
-          name: "${{ env.KERNEL_DEVICE }}-${{ env.KERNEL_NAME }}_${{ env.builddate }}"
-          path: AnyKernel3/*
+          name: "${{ env.KERNEL_DEVICE }}-${{ env.KERNEL_NAME }}_${{ env.builddate }}.zip"
+          path: AnyKernel3/*.zip
 
-      - name: 🧧 Create GitHub Release => (${{ env.builddate }})
+      - name: "🎉 Create GitHub Release => (${{ env.builddate }})"
         continue-on-error: true
         uses: softprops/action-gh-release@v1
         if: ${{ env.useAnykernel == 'true' && env.release == 'true' }}
