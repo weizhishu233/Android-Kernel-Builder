@@ -172,22 +172,31 @@ jobs:
           KSU_VERSION=$(expr $(/usr/bin/git rev-list --count HEAD) "+" 12505)
           echo "KSUVER=$KSU_VERSION" >> $GITHUB_ENV
 
-      - name: "🧩 Apply SUSFS Patches"
-        if: ${{ env.withKernelSU == 'true' && env.kernelsu_variant == 'SukiSU' && env.SUSFS_ENABLED == 'true' }}
-        run: |
-          cd ${{ env.KERNEL_NAME }}
-          git clone https://gitlab.com/simonpunk/susfs4ksu.git -b gki-${{ matrix.repos.android_version }}-${{ matrix.repos.kernel_version }}
-          git clone https://github.com/ShirkNeko/SukiSU_patch.git
+- name: "🧩 Apply SUSFS Patches"
+  if: ${{ env.withKernelSU == 'true' && env.kernelsu_variant == 'SukiSU' && env.SUSFS_ENABLED == 'true' }}
+  run: |
+    cd ${{ env.KERNEL_NAME }}
+    # 确保分支名称有效
+    if [ -z "${{ matrix.repos.android_version }}" ] || [ -z "${{ matrix.repos.kernel_version }}" ]; then
+      echo "Android version or kernel version is not specified. Using default branch 'main'."
+      git clone https://gitlab.com/simonpunk/susfs4ksu.git -b main
+    else
+      # 检查分支是否存在
+      git ls-remote --exit-code --heads https://gitlab.com/simonpunk/susfs4ksu.git "gki-${{ matrix.repos.android_version }}-${{ matrix.repos.kernel_version }}" || {
+        echo "Branch gki-${{ matrix.repos.android_version }}-${{ matrix.repos.kernel_version }} not found. Using default branch 'main'."
+        git clone https://gitlab.com/simonpunk/susfs4ksu.git -b main
+      }
+    fi
 
-          # Copy SUSFS patches
-          cp ../susfs4ksu/kernel_patches/50_add_susfs_in_gki-${{ matrix.repos.android_version }}-${{ matrix.repos.kernel_version }}.patch ./common/
-          cp ../susfs4ksu/kernel_patches/fs/* ./common/fs/
-          cp ../susfs4ksu/kernel_patches/include/linux/* ./common/include/linux/
+    # 复制补丁文件
+    cp ../susfs4ksu/kernel_patches/50_add_susfs_in_gki-${{ matrix.repos.android_version }}-${{ matrix.repos.kernel_version }}.patch ./common/
+    cp ../susfs4ksu/kernel_patches/fs/* ./common/fs/
+    cp ../susfs4ksu/kernel_patches/include/linux/* ./common/include/linux/
 
-          echo "正在给内核打susfs补丁"
-          cd ./common
-          patch -p1 < 50_add_susfs_in_gki-${{ matrix.repos.android_version }}-${{ matrix.repos.kernel_version }}.patch || true
-          echo "完成"
+    echo "正在给内核打susfs补丁"
+    cd ./common
+    patch -p1 < 50_add_susfs_in_gki-${{ matrix.repos.android_version }}-${{ matrix.repos.kernel_version }}.patch || true
+    echo "完成"
 
       - name: "🔍 Apply Hide Stuff Patches"
         if: ${{ env.withKernelSU == 'true' && env.kernelsu_variant == 'SukiSU' && env.SUSFS_ENABLED == 'true' }}
