@@ -173,7 +173,6 @@ jobs:
         if: ${{ env.withKernelSU == 'true' && env.kernelsu_variant == 'SukiSU' && env.SUSFS_ENABLED == 'true' }}
         run: |
           cd ${{ env.KERNEL_NAME }}
-          git clone https://gitlab.com/simonpunk/susfs4ksu.git -b kernel-4.14
           git clone https://github.com/ShirkNeko/SukiSU_patch.git
 
           # 确保 common 目录及其子目录存在
@@ -182,19 +181,19 @@ jobs:
           mkdir -p ./common/include/linux
 
           # 检查补丁文件是否存在
-          if [ ! -f "susfs4ksu/kernel_patches/50_add_susfs_in_kernel-4.14.patch" ]; then
+          if [ ! -f "SukiSU_patch/4.14/ksu_hooks_4.14.patch" ]; then
             echo "Patch file not found. Please check the repository and branch."
             exit 1
           fi
 
           # Copy SUSFS patches
-          cp susfs4ksu/kernel_patches/50_add_susfs_in_kernel-4.14.patch ./common/
-          cp susfs4ksu/kernel_patches/fs/* ./common/fs/
-          cp susfs4ksu/kernel_patches/include/linux/* ./common/include/linux/
+          cp SukiSU_patch/4.14/ksu_hooks_4.14.patch ./common/
+          cp SukiSU_patch/69_hide_stuff.patch ./common/
+          cp SukiSU_patch/hooks/new_hooks.patch ./common/
 
           echo "正在给内核打susfs补丁"
           cd ./common
-          patch -p1 < 50_add_susfs_in_kernel-4.14.patch || true
+          patch -p1 < ksu_hooks_4.14.patch || true
           echo "完成"
 
       - name: "Apply Hide Stuff Patches"
@@ -284,7 +283,7 @@ jobs:
           args: ${{ steps.generate-args.outputs.args }}
         run: |
           echo "PATH Variable: $PATH"
-          make ${args}
+          make ${args }
 
       - name: "Upload Image"
         uses: actions/upload-artifact@v4
