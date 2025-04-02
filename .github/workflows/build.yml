@@ -3,25 +3,11 @@ name: "Build kernels"
 on:
   workflow_dispatch:
     inputs:
-      SUSFS_ENABLED:
-        description: "添加 SUSFS"
-        required: true
-        type: boolean
-        default: true
-      VFS_patch_ENABLED:
-        description: "添加vfs补丁（新钩子）？"
-        required: true
-        type: choice
-        options:
-          - enable
-          - disable
-        default: enable
       kernelsu_variant:
         description: "选择 KSU"
         required: true
         type: choice
         options:
-          - Kernel
           - SukiSU
         default: SukiSU
       kernelsu_version:
@@ -29,10 +15,8 @@ on:
         required: true
         type: choice
         options:
-          - without ksu
-          - tag
-          - main
-        default: main
+          - susfs-stable
+        default: susfs-stable
 
 jobs:
   Set-repos:
@@ -76,8 +60,6 @@ jobs:
       withKernelSU: ${{ matrix.repos.withKernelSU }}
       useAnykernel: ${{ matrix.repos.AnyKernel3.use }}
       release: ${{ matrix.repos.AnyKernel3.release }}
-      SUSFS_ENABLED: ${{ github.event.inputs.SUSFS_ENABLED }}
-      VFS_patch_ENABLED: ${{ github.event.inputs.VFS_patch_ENABLED }}
       kernelsu_variant: ${{ github.event.inputs.kernelsu_variant }}
       kernelsu_version: ${{ github.event.inputs.kernelsu_version }}
     steps:
@@ -184,7 +166,7 @@ jobs:
           args: ${{ steps.generate-args.outputs.args }}
         run: |
           echo "PATH Variable: $PATH"
-          make ${args }
+          make ${args}
 
       - name: "Upload Image"
         uses: actions/upload-artifact@v4
